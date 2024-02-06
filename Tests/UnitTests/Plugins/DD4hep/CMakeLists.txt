@@ -25,7 +25,7 @@ else()
   set(factory_path "${CMAKE_CURRENT_BINARY_DIR}")
 endif()
 
-if (EXISTS ${DD4hep_DIR}/${CMAKE_INSTALL_LIBDIR})
+if (EXISTS ${DD4hep_DIR}/lib)#changed from CMAKE_INSTALL_LIBDIR to lib
   # set test library dependencies
   set(unittest_extra_libraries ActsTestsDD4hepFactories ActsPluginDD4hep)
   set(dd4hep_tests DD4hepDetectorElement DD4hepCylinderLayerStructure DD4hepDiscLayerStructure DD4hepCylindricalDetector)
