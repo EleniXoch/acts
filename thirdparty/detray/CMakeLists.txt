@@ -42,11 +42,11 @@ set( DETRAY_SETUP_BENCHMARK FALSE CACHE BOOL
 set( DETRAY_SETUP_COVFIE ON CACHE BOOL
    "Set up the covfie target" )
 set( DETRAY_SETUP_GOOGLETEST OFF CACHE BOOL
-   "Set up the covfie target" )
+   "Don't set up the GoogleTest target" )
 set( DETRAY_VC_PLUGIN OFF CACHE BOOL
-  "Set up the covfie target" )
+  "Don't build Vc based math plugin" )
 set( DETRAY_SVG_DISPLAY ON CACHE BOOL
-   "Set up the covfie target" )
+   "Build the ActSVG display module" )
 set( DETRAY_SETUP_DFELIBS FALSE CACHE BOOL
    "Do not set up Dfelibs as part of Detray" )
 set( DETRAY_SETUP_NLOHMANN FALSE CACHE BOOL
