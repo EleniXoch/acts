@@ -25,6 +25,28 @@ FetchContent_Declare( Detray
 
 set( DETRAY_SETUP_ACTSVG FALSE CACHE BOOL
    "Do not set up Actsvg as part of Detray" )
+set( DETRAY_BENCHMARKS FALSE CACHE BOOL
+   "Disable benchmark tests" )
+set( DETRAY_BUILD_TUTORIALS FALSE CACHE BOOL
+   "Don't build the tutorial executables of Detray" )
+set( DETRAY_BUILD_TESTING FALSE CACHE BOOL
+   "Don't Build the (unit) tests of Detray" )
+set( DETRAY_CUSTOM_SCALARTYPE float CACHE STRING
+   "Use float type in the Detray code" )
+set( DETRAY_EIGEN_PLUGIN FALSE CACHE BOOL
+   "Don't build Eigen math plugin" )
+set( DETRAY_SETUP_ALGEBRA_PLUGINS ON CACHE BOOL
+  "Set up the Algebra Plugins target(s)" )
+set( DETRAY_SETUP_BENCHMARK FALSE CACHE BOOL
+   "Don't set up the Google Benchmark target(s)" )
+set( DETRAY_SETUP_COVFIE ON CACHE BOOL
+   "Set up the covfie target" )
+set( DETRAY_SETUP_GOOGLETEST OFF CACHE BOOL
+   "Set up the covfie target" )
+set( DETRAY_VC_PLUGIN OFF CACHE BOOL
+  "Set up the covfie target" )
+set( DETRAY_SVG_DISPLAY ON CACHE BOOL
+   "Set up the covfie target" )
 set( DETRAY_SETUP_DFELIBS FALSE CACHE BOOL
    "Do not set up Dfelibs as part of Detray" )
 set( DETRAY_SETUP_NLOHMANN FALSE CACHE BOOL
