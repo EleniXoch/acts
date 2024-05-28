@@ -15,6 +15,11 @@
 #include "Acts/Detector/ProtoDetector.hpp"
 //#include "Acts/Plugins/Python/Utilities.hpp"
 #include "Acts/Utilities/Logger.hpp"
+#include "Acts/Utilities/TypeList.hpp"
+#include "Acts/Utilities/GridAxisGenerators.hpp"
+#include "Acts/Utilities/IAxis.hpp"
+
+
 #include "Acts/Plugins/Json/AlgebraJsonConverter.hpp"
 #include "Acts/Plugins/Json/SurfaceJsonConverter.hpp"
 #include "Acts/Plugins/Json/DetrayJsonHelper.hpp"
@@ -30,6 +35,10 @@
 #include "Acts/Surfaces/RegularSurface.hpp"
 #include "Acts/Surfaces/Surface.hpp"
 
+//debug
+#include "detray/utils/type_list.hpp"
+
+
 // detray geometry
 #include "detray/builders/detector_builder.hpp"
 #include "detray/io/frontend/payloads.hpp"
@@ -39,6 +48,11 @@
 
 #include "detray/io/common/geometry_reader.hpp"
 #include "detray/io/common/geometry_writer.hpp"
+#include "detray/io/common/surface_grid_writer.hpp"
+#include "detray/io/common/surface_grid_reader.hpp"
+#include "detray/io/common/detail/grid_reader.hpp"
+
+
 
 #include "detray/io/json/json_reader.hpp"
 #include "detray/io/json/json_writer.hpp"
@@ -53,7 +67,6 @@
 #include "detray/utils/consistency_checker.hpp"
 #include "detray/io/frontend/detector_reader.hpp"
 #include "detray/navigation/volume_graph.hpp"
-
 
 // System include(s)
 #include <fstream>
@@ -108,7 +121,116 @@ namespace detray{
 
     /// These functions perform the conversion of the ACTS detector to the detray detector. 
     /// The payloads are created and populated by traversing the initial ACTS detector object.
+        
 
+    // debug print json differences
+    void print_json_diff(const nlohmann::json& j1, const nlohmann::json& j2, const std::string& prefix = "") {
+        // If j1 and j2 are not of the same type, they are different
+        if (j1.type() != j2.type()) {
+            std::cout << prefix << "Type mismatch: " << j1.type_name() << " vs " << j2.type_name() << std::endl;
+            return;
+        }
+
+        // If j1 and j2 are objects, compare each key-value pair
+        if (j1.is_object() && j2.is_object()) {
+            for (auto it = j1.begin(); it != j1.end(); ++it) {
+                std::string key = it.key();
+                if (j2.find(key) != j2.end()) {
+                    print_json_diff(it.value(), j2.at(key), prefix + key + ".");
+                } else {
+                    std::cout << prefix << key << " is missing in second JSON" << std::endl;
+                }
+            }
+            for (auto it = j2.begin(); it != j2.end(); ++it) {
+                std::string key = it.key();
+                if (j1.find(key) == j1.end()) {
+                    std::cout << prefix << key << " is missing in first JSON" << std::endl;
+                }
+            }
+        }
+        // If j1 and j2 are arrays, compare each element
+        else if (j1.is_array() && j2.is_array()) {
+            size_t size = std::max(j1.size(), j2.size());
+            for (size_t i = 0; i < size; ++i) {
+                if (i < j1.size() && i < j2.size()) {
+                    print_json_diff(j1[i], j2[i], prefix + "[" + std::to_string(i) + "].");
+                } else if (i < j1.size()) {
+                    std::cout << prefix << "[" << i << "] is missing in second JSON" << std::endl;
+                } else {
+                    std::cout << prefix << "[" << i << "] is missing in first JSON" << std::endl;
+                }
+            }
+        }
+        // If j1 and j2 are primitives (string, number, boolean, or null), compare their values
+        else if (j1 != j2) {
+            std::cout << prefix << "Value mismatch: " << j1 << " vs " << j2 << std::endl;
+        }
+
+    }
+
+
+
+
+
+    //debug function printing out grids in json file 
+    void detray_grids_print( io::detector_grids_payload<std::size_t, io::accel_id>& grids_pd){
+
+        nlohmann::json j;
+        const std::string filename = "debug_grids.json";
+        //debugging loop for grids
+        for (size_t i = 0; i < grids_pd.grids.size(); ++i) {
+            for ( auto& grid : grids_pd.grids[i]) {
+                nlohmann::json jGrid;
+                jGrid["owner_link"] = grid.owner_link.link;
+                jGrid["grid_link"] = {{"type", grid.grid_link.type}, {"index", grid.grid_link.index}};
+
+                for (const auto& axis : grid.axes) {
+                    nlohmann::json jAxis;
+                    jAxis["binning"] = axis.binning;
+                    jAxis["bounds"] = axis.bounds;
+                    jAxis["label"] = axis.label;
+                    jAxis["bins"] = axis.bins;
+                    jAxis["edges"] = axis.edges;
+                    std::cout << "jAxis: " << jAxis.dump(4) << std::endl;
+                    jGrid["axes"].push_back(jAxis);
+                }
+
+                for (const auto& bin : grid.bins) {
+                    nlohmann::json jBin;
+                    jBin["loc_index"] = bin.loc_index;
+                    jBin["content"] = bin.content;
+                    std::cout << "jBins: " << jBin.dump(4) << std::endl;
+                    jGrid["bins"].push_back(jBin);
+                }
+
+                j["grids"].push_back(jGrid);
+                
+            }
+        }
+
+        std::ofstream file(filename);
+        file << j.dump(4); // 4 spaces for indentation
+
+        for (auto& element : j.items()) {
+            if (element.key() == "grid_data") {
+                for (auto& array : element.value()) {
+                    if (array.size() > 1) {
+                        std::cout << "Array with more than one element found: " << array << std::endl;
+                    }
+                }
+            }
+        }
+
+
+        //diff 2 jsons
+        /*std::ifstream goldenFile("odd-detray_surface_grids_detray.json");
+        nlohmann::json gold_grids;
+        goldenFile >> gold_grids;
+        print_json_diff(j["grids"], gold_grids["data"]["grids"]["grid_data"]);
+        std::cout<<"check debug_grids.json and odd-detray_surface_grids_detray.json"<<std::endl;*/
+
+        return;
+    }
     /// detray geometry writer function, debug purposes 
     void detray_detector_print(const detector_t& det){
 
@@ -422,40 +544,12 @@ namespace detray{
         return vol_pd;
     }
     
-    
     /// GRID related functions -- in progress
-    static io::detector_grids_payload<std::size_t, io::accel_id> detray_converter_grid(
-    const Acts::Experimental::Detector& detector){
-    
-        io::detector_grids_payload<std::size_t, io::accel_id> grid_pd = io::detector_grids_payload<std::size_t, io::accel_id>();
-        auto volumes = detector.volumes();
-
-        for (const auto [iv, volume] : enumerate(volumes)) {
-
-            //Call an equivalent of IndexedSurfacesJsonConverter::toJson
-                //check if it is null
-
-            // Patch axes for cylindrical grid surfaces, axes are swapped
-            // at this point
-            // get jAccLink 
-            // get accLinkType 
-            // Radial value to transfer phi to rphi
-            // get the axes
-            // r*phi axis is the first one
-            // Write back the patches axis edges
-            // Complete the grid json for detray usage
-            // jSurfacesDelegate["acc_link"] =
-            }
-        
-
-        return grid_pd;
-    }
-
     io::axis_payload axis_converter(const IAxis& ia) {
         ///home/exochell/docker_dir/ACTS_ODD_D/acts/Plugins/Json/src/GridJsonConverter.cpp: nlohmann::json Acts::AxisJsonConverter::toJsonDetray
         io::axis_payload axis_pd;
-        axis_pd.bounds = {
-            ia.getBoundaryType() == Acts::detail::AxisBoundaryType::Bound ? axis::bounds::e_closed : axis::bounds::e_circular};
+        axis_pd.bounds =  
+            ia.getBoundaryType() == Acts::detail::AxisBoundaryType::Bound ? axis::bounds::e_closed : axis::bounds::e_circular;
         axis_pd.binning = ia.isEquidistant() ? axis::binning::e_regular : axis::binning::e_irregular;
         axis_pd.bins = ia.getNBins();
         if (ia.isEquidistant()) {
@@ -464,28 +558,79 @@ namespace detray{
             axis_pd.edges = ia.getBinEdges();
         }
 
+        nlohmann::json output;
+        output["axis_pd"]["bounds"] = axis_pd.bounds;
+        output["axis_pd"]["binning"] = axis_pd.binning;
+        output["axis_pd"]["bins"] = axis_pd.bins;
+        output["axis_pd"]["edges"] = axis_pd.edges;
+        std::ofstream file("debug_axes.json", std::ios::app);
+        file << output.dump(4);
+
         return axis_pd;
     }
 
     template <typename grid_type>
     io::grid_payload<std::size_t, io::accel_id> grid_converter(
-        //nlohmann::json toJsonDetray
         const grid_type& grid, bool swapAxis = false) {
+        //nlohmann::json toJsonDetray
         //nlohmann::json jGrid;
         // Get the grid axes & potentially swap them
         io::grid_payload<std::size_t, io::accel_id> grid_pd;
 
         std::array<const Acts::IAxis*, grid_type::DIM> axes = grid.axes();
         if (swapAxis && grid_type::DIM == 2u) {
+            std::cout<<"swap axes"<<std::endl;
             std::swap(axes[0u], axes[1u]);
         }
+        
 
         // Fill the axes in the order they are
         for (unsigned int ia = 0u; ia < grid_type::DIM; ++ia) {            
-            grid_pd.axes.push_back(axis_converter(*axes[ia]));//push axis to axes
-            //TO DO:        axis_pd.label = static_cast<axis::label>(ia);
+            io::axis_payload axis_pd = axis_converter(*axes[ia]);
+            axis_pd.label = static_cast<axis::label>(ia);
+            grid_pd.axes.push_back(axis_pd);//push axis to axes
         }
-        ///TO DO : much body missing
+
+        // 1D connections
+        if constexpr (grid_type::DIM == 1u) {
+            for (unsigned int ib0 = 1u; ib0 <= axes[0u]->getNBins(); ++ib0) {
+            // Lookup bin
+                typename grid_type::index_t lbin;
+                io::grid_bin_payload<std::size_t>grid_bin_pd; 
+                
+                lbin[0u] = ib0;
+                grid_bin_pd.content = grid.atLocalBins(lbin);
+                // Corrected bin for detray
+                lbin[0u] = ib0 - 1u;
+                grid_bin_pd.loc_index = std::vector<unsigned int>(lbin.begin(), lbin.end());
+                grid_pd.bins.push_back(grid_bin_pd);
+            }
+        }
+
+        // 2D connections
+        if constexpr (grid_type::DIM == 2u) {
+            for (unsigned int ib0 = 1u; ib0 <= axes[0u]->getNBins(); ++ib0) {
+                for (unsigned int ib1 = 1u; ib1 <= axes[1u]->getNBins(); ++ib1) {
+                    typename grid_type::index_t lbin;
+                    // Lookup bin - respect swap (if it happened) for the lookup
+                    lbin[0u] = swapAxis ? ib1 : ib0;
+                    lbin[1u] = swapAxis ? ib0 : ib1;
+
+                    io::grid_bin_payload<std::size_t>grid_bin_pd; 
+
+                    nlohmann::json jBin;
+                    grid_bin_pd.content = grid.atLocalBins(lbin);
+                    // Corrected bin for detray
+                    lbin[0u] = ib0 - 1u;
+                    lbin[1u] = ib1 - 1u;
+                    grid_bin_pd.loc_index = std::vector<unsigned int>(lbin.begin(), lbin.end());
+                    grid_pd.bins.push_back(grid_bin_pd);
+
+                }
+            }
+        }
+
+        std::cout<<"\tgrid_converter"<<std::endl;
         return grid_pd;
     }
     
@@ -493,11 +638,99 @@ namespace detray{
     template <typename index_grid>
     io::grid_payload<std::size_t, io::accel_id> convertImpl(const index_grid& indexGrid) {
         
-        //TO DO: casts implementation (if needed for detray)
-        io::grid_payload<std::size_t, io::accel_id> grid_pd = grid_converter(indexGrid.grid, true);
+        bool swapAxes = true;
+
+        if constexpr (index_grid::grid_type::DIM == 2u) {
+            // Check for axis swap (detray version)
+            std::cout<<"swap Axes changed to "<<swapAxes<<std::endl;
+            swapAxes = (indexGrid.casts[0u] == binZ && indexGrid.casts[1u] == binPhi);
+        }
+
+        io::grid_payload<std::size_t, io::accel_id> grid_pd = grid_converter(indexGrid.grid, swapAxes);
 
         return grid_pd;
     }
+
+    template <typename instance_type>
+    std::optional<io::grid_payload<std::size_t, io::accel_id>> convert(
+                const Experimental::SurfaceCandidatesUpdater& delegate,
+                bool detray, [[maybe_unused]] const instance_type& refInstance) {
+        using GridType =
+            typename instance_type::template grid_type<std::vector<std::size_t>>;
+        // Defining a Delegate type
+        using DelegateType = Experimental::IndexedSurfacesAllPortalsImpl<
+            GridType, Experimental::IndexedSurfacesImpl>;
+        using SubDelegateType = Experimental::IndexedSurfacesImpl<GridType>;
+        
+        std::cout<<"convert"<<std::endl;
+        // Get the instance
+        const auto* instance = delegate.instance();
+        auto castedDelegate = dynamic_cast<const DelegateType*>(instance);
+        
+        if (castedDelegate != nullptr) {
+            // Get the surface updator
+            io::grid_payload<std::size_t, io::accel_id> grid_pd;
+            auto indexedSurfaces = std::get<SubDelegateType>(castedDelegate->updators);
+            grid_pd = convertImpl<SubDelegateType>(indexedSurfaces);
+            grid_pd.grid_link.type = static_cast<io::accel_id>(DetrayJsonHelper::accelerationLink(indexedSurfaces.casts));
+            grid_pd.grid_link.index = std::numeric_limits<std::size_t>::max();
+            return grid_pd;
+        }
+
+        return std::nullopt;
+
+    }
+
+    template <typename... Args>
+    std::vector<io::grid_payload<std::size_t, io::accel_id>> unrollConvert(const Experimental::SurfaceCandidatesUpdater& delegate,
+                    bool detray, TypeList<Args...> ) {
+
+        std::cout<<"call convert"<<std::endl;
+        std::vector<io::grid_payload<std::size_t, io::accel_id>> grid_pds;
+
+        ((void)(([&]() {
+        auto grid_pd = convert(delegate, detray, Args{});
+        if (grid_pd.has_value()) {
+                grid_pds.push_back(*grid_pd);
+            }
+        })(), ...));
+
+        return grid_pds;
+    }
+
+    static io::detector_grids_payload<std::size_t, io::accel_id> detray_converter_grid(
+        const Acts::Experimental::Detector& detector){
+    
+        io::detector_grids_payload<std::size_t, io::accel_id> grids_pd = io::detector_grids_payload<std::size_t, io::accel_id>();
+        auto volumes = detector.volumes();
+
+        for (const auto [iv, volume] : enumerate(volumes)) {
+
+            //Call an equivalent of IndexedSurfacesJsonConverter::toJson
+                //check if it is null
+            bool detray = true;
+            std::cout<<"call unroll"<<std::endl;
+            std::vector<io::grid_payload<std::size_t, io::accel_id>> grid_pd = 
+                unrollConvert(volume->surfaceCandidatesUpdater(), detray, GridAxisGenerators::PossibleAxes{});
+            
+            for (auto& grid : grid_pd) {
+                detray::io::single_link_payload lnk;
+                lnk.link = iv;
+                grid.owner_link = lnk;
+                grids_pd.grids[iv].push_back(grid);
+            }
+
+            //TO DO:: volume link
+
+            //TO DO:: header payload
+            
+        }
+
+        detray_grids_print(grids_pd);
+
+        return grids_pd;
+    }
+
 
     /// @return the geo_header_payload from @param detector object of ACTS
     static io::geo_header_payload detray_converter_head(
@@ -532,19 +765,21 @@ namespace detray{
         detector_builder<default_metadata> det_builder{};
 
         detray::io::geometry_reader::convert<detector_t>(det_builder, names, dp);
+        
+        //io/include/detray/io/common/surface_grid_reader.hpp
+        detray::io::surface_grid_reader<
+                                    typename detector_t::surface_type,
+                                    std::integral_constant<std::size_t, 0>,
+                                    std::integral_constant<std::size_t, 2>>
+                                    ::convert<detector_t>(det_builder, names, detray_converter_grid(detector));
+        
+
+        std::cout<<"detector_t"<<std::endl;
+        detray::types::print<types::list<detector_t>>();
+
         detector_t detrayDet(det_builder.build(mr));
- 
+        detray::detail::check_consistency(detrayDet);
 
-        // temporarily print out for verification purposes
-        std::ofstream outputFile("detector_data.json");
-        nlohmann::ordered_json out_json;
-
-        out_json["data"] = detray::io::geometry_writer::convert(detrayDet, names);
-        outputFile << out_json << std::endl;
-        detray::detail::check_consistency(detrayDet); 
-        
-        ///acts/_deps/detray-src/io/include/detray/io/frontend/detector_reader.hpp
-        
         return std::move(detrayDet);
     }
 
