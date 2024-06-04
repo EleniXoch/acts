@@ -37,16 +37,12 @@
 #include "detray/io/common/geometry_reader.hpp"
 #include "detray/io/common/geometry_writer.hpp"
 
-#include "detray/io/json/json_reader.hpp"
-#include "detray/io/json/json_writer.hpp"
-#include "detray/io/json/json_io.hpp"
-#include "detray/io/frontend/writer_interface.hpp"
-
 // surface grid
 #include "Acts/Utilities/IAxis.hpp"
 #include "Acts/Detector/detail/IndexedSurfacesGenerator.hpp"
 
 // checks - prints
+#include "detray/io/frontend/detector_writer.hpp"
 #include "detray/utils/consistency_checker.hpp"
 #include "detray/io/frontend/detector_reader.hpp"
 #include "detray/navigation/volume_graph.hpp"
@@ -55,7 +51,6 @@
 // System include(s)
 #include <fstream>
 #include <optional>
-#include <initializer_list>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -107,14 +102,12 @@ namespace DetrayConverter{
     /// The payloads are created and populated by traversing the initial ACTS detector object.
 
     /// detray geometry writer function, debug purposes 
-    void converterPrint(const detector_t& det){
+    void converterPrint(const detector_t& det, const typename detector_t::name_map& names = {}){
 
-        std::ofstream outputFile("data_try.json");
-        nlohmann::ordered_json out_json;
-        typename detector_t::name_map names{};
-        out_json["data"] = detray::io::geometry_writer::convert(det, names);
-        outputFile << out_json << std::endl;
-        return;
+        auto writer_cfg = detray::io::detector_writer_config{}
+                            .format(detray::io::format::json)
+                            .replace_files(true);
+        detray::io::write_detector(det, names, writer_cfg);
     }
     
     /// @return the transform_payload(translation, rotation) of each surface/volume
@@ -161,7 +154,6 @@ namespace DetrayConverter{
         mask_pd.boundaries = static_cast<std::vector<real_io>>(boundaries); 
 
         //acts/_deps/detray-src/io/include/detray/io/common/geometry_reader.hpp
-        //TO DO: use inline single_link_payload convert(const std::size_t idx) 
         detray::io::single_link_payload lnk;
         mask_pd.volume_link = lnk;
 
@@ -425,8 +417,6 @@ namespace DetrayConverter{
         detray::io::geo_header_payload header_pd;
         detray::io::common_header_payload header_data_pd;
         
-
-        //TO DO use inline common_header_payload convert(const std::string_view det_name, const std::string_view tag)
         header_data_pd.version = io::detail::get_detray_version();
         header_data_pd.detector = detector.name();
         header_data_pd.tag = "geometry"; 
@@ -445,13 +435,17 @@ namespace DetrayConverter{
         for (const auto volume : detector.volumes()) {
             dp.volumes.push_back(convertVolume(*volume, detector.volumes(), gctx));
         }
-        typename detector_t::name_map names{};
+        typename detector_t::name_map names = {{0u, detector.name()}};
+
         detector_builder<default_metadata> det_builder{};
 
         detray::io::geometry_reader::convert<detector_t>(det_builder, names, dp);
         detector_t detrayDet(det_builder.build(mr));
-        detray::detail::check_consistency(detrayDet); 
-        
+        detray::detail::check_consistency(detrayDet, true, names);
+        std::cout << "Size of names: " << names.size() << std::endl;
+
+        converterPrint(detrayDet, names);
+
         std::tuple<detector_t, vecmem::memory_resource&> det_tuple(std::move(detrayDet), mr);
 
         return std::move(det_tuple);
