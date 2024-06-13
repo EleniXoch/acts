@@ -79,6 +79,7 @@ endif()
 
 if(ACTS_BUILD_PLUGIN_DETRAY)
   target_link_libraries(ActsPythonBindings PUBLIC ActsPluginDetray)
+  #  target_link_libraries(ActsPythonBindings PUBLIC ActsPluginDetray vecmem::core)
   target_sources(ActsPythonBindings PRIVATE src/Detray.cpp)
 else()
   target_sources(ActsPythonBindings PRIVATE src/DetrayStub.cpp)

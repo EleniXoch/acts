@@ -35,14 +35,6 @@
 #include <pybind11/stl.h>
 #include <pybind11/operators.h>
 
-namespace Acts {
-class IMaterialDecorator;
-}  // namespace Acts
-namespace ActsExamples {
-class IMaterialWriter;
-class IWriter;
-}  // namespace ActsExamples
-
 namespace py = pybind11;
 using namespace pybind11::literals;
 
@@ -50,6 +42,7 @@ using namespace Acts;
 using namespace ActsExamples;
 using namespace detray;
 using namespace detray::io::detail;
+//using namespace vecmem;
 
 using detector_t = detector<default_metadata>;
 
@@ -63,6 +56,11 @@ namespace Acts::Python {
         {
             py::class_<detector<default_metadata>, std::shared_ptr<detector<default_metadata>>>(m, "detray_detector");     
         }
+        
+        /*{
+            py::class_<vecmem::host_memory_resource>(m, "HostMemoryResource")
+                .def(py::init<>());
+        }*/
         
         {
             mex.def("DetrayPrinter", &detray::detray_detector_print);
@@ -80,7 +78,7 @@ namespace Acts::Python {
                         // Convert Acts detector to detray detector using the detray_tree_converter function
                         auto d_detray = detray_tree_converter(acts_detector, gctx, host_mr);   
                         
-                        return true;//TO DO:: return d_detray; after host_mr is fixed
+                        return true;//TO DO:: return tuple
                     });
         }
     }

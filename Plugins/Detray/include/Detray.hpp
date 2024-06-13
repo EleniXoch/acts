@@ -168,10 +168,6 @@ namespace detray{
 
     }
 
-
-
-
-
     //debug function printing out grids in json file 
     void detray_grids_print( io::detector_grids_payload<std::size_t, io::accel_id>& grids_pd){
 
@@ -544,8 +540,7 @@ namespace detray{
         return vol_pd;
     }
     
-    /// GRID related functions -- in progress
-    io::axis_payload axis_converter(const IAxis& ia) {
+    io::axis_payload convertAxis(const IAxis& ia) {
         ///home/exochell/docker_dir/ACTS_ODD_D/acts/Plugins/Json/src/GridJsonConverter.cpp: nlohmann::json Acts::AxisJsonConverter::toJsonDetray
         io::axis_payload axis_pd;
         axis_pd.bounds =  
@@ -558,22 +553,12 @@ namespace detray{
             axis_pd.edges = ia.getBinEdges();
         }
 
-        nlohmann::json output;
-        output["axis_pd"]["bounds"] = axis_pd.bounds;
-        output["axis_pd"]["binning"] = axis_pd.binning;
-        output["axis_pd"]["bins"] = axis_pd.bins;
-        output["axis_pd"]["edges"] = axis_pd.edges;
-        std::ofstream file("debug_axes.json", std::ios::app);
-        file << output.dump(4);
-
         return axis_pd;
     }
 
     template <typename grid_type>
-    io::grid_payload<std::size_t, io::accel_id> grid_converter(
+    io::grid_payload<std::size_t, io::accel_id> convertGrid(
         const grid_type& grid, bool swapAxis = false) {
-        //nlohmann::json toJsonDetray
-        //nlohmann::json jGrid;
         // Get the grid axes & potentially swap them
         io::grid_payload<std::size_t, io::accel_id> grid_pd;
 
@@ -586,7 +571,7 @@ namespace detray{
 
         // Fill the axes in the order they are
         for (unsigned int ia = 0u; ia < grid_type::DIM; ++ia) {            
-            io::axis_payload axis_pd = axis_converter(*axes[ia]);
+            io::axis_payload axis_pd = convertAxis(*axes[ia]);
             axis_pd.label = static_cast<axis::label>(ia);
             grid_pd.axes.push_back(axis_pd);//push axis to axes
         }
@@ -629,8 +614,7 @@ namespace detray{
                 }
             }
         }
-
-        std::cout<<"\tgrid_converter"<<std::endl;
+        
         return grid_pd;
     }
     
@@ -641,12 +625,11 @@ namespace detray{
         bool swapAxes = true;
 
         if constexpr (index_grid::grid_type::DIM == 2u) {
-            // Check for axis swap (detray version)
-            std::cout<<"swap Axes changed to "<<swapAxes<<std::endl;
+            // Check for axis swap
             swapAxes = (indexGrid.casts[0u] == binZ && indexGrid.casts[1u] == binPhi);
         }
 
-        io::grid_payload<std::size_t, io::accel_id> grid_pd = grid_converter(indexGrid.grid, swapAxes);
+        io::grid_payload<std::size_t, io::accel_id> grid_pd = convertGrid(indexGrid.grid, swapAxes);
 
         return grid_pd;
     }
@@ -654,7 +637,7 @@ namespace detray{
     template <typename instance_type>
     std::optional<io::grid_payload<std::size_t, io::accel_id>> convert(
                 const Experimental::SurfaceCandidatesUpdater& delegate,
-                bool detray, [[maybe_unused]] const instance_type& refInstance) {
+                [[maybe_unused]] const instance_type& refInstance) {
         using GridType =
             typename instance_type::template grid_type<std::vector<std::size_t>>;
         // Defining a Delegate type
@@ -662,7 +645,6 @@ namespace detray{
             GridType, Experimental::IndexedSurfacesImpl>;
         using SubDelegateType = Experimental::IndexedSurfacesImpl<GridType>;
         
-        std::cout<<"convert"<<std::endl;
         // Get the instance
         const auto* instance = delegate.instance();
         auto castedDelegate = dynamic_cast<const DelegateType*>(instance);
@@ -683,13 +665,13 @@ namespace detray{
 
     template <typename... Args>
     std::vector<io::grid_payload<std::size_t, io::accel_id>> unrollConvert(const Experimental::SurfaceCandidatesUpdater& delegate,
-                    bool detray, TypeList<Args...> ) {
+                    TypeList<Args...> ) {
 
         std::cout<<"call convert"<<std::endl;
         std::vector<io::grid_payload<std::size_t, io::accel_id>> grid_pds;
 
         ((void)(([&]() {
-        auto grid_pd = convert(delegate, detray, Args{});
+        auto grid_pd = convert(delegate, Args{});
         if (grid_pd.has_value()) {
                 grid_pds.push_back(*grid_pd);
             }
@@ -698,7 +680,7 @@ namespace detray{
         return grid_pds;
     }
 
-    static io::detector_grids_payload<std::size_t, io::accel_id> detray_converter_grid(
+    static io::detector_grids_payload<std::size_t, io::accel_id> convertSurfaceGrids(
         const Acts::Experimental::Detector& detector){
     
         io::detector_grids_payload<std::size_t, io::accel_id> grids_pd = io::detector_grids_payload<std::size_t, io::accel_id>();
@@ -708,10 +690,9 @@ namespace detray{
 
             //Call an equivalent of IndexedSurfacesJsonConverter::toJson
                 //check if it is null
-            bool detray = true;
             std::cout<<"call unroll"<<std::endl;
             std::vector<io::grid_payload<std::size_t, io::accel_id>> grid_pd = 
-                unrollConvert(volume->surfaceCandidatesUpdater(), detray, GridAxisGenerators::PossibleAxes{});
+                unrollConvert(volume->surfaceCandidatesUpdater(), GridAxisGenerators::PossibleAxes{});
             
             for (auto& grid : grid_pd) {
                 detray::io::single_link_payload lnk;
@@ -719,15 +700,9 @@ namespace detray{
                 grid.owner_link = lnk;
                 grids_pd.grids[iv].push_back(grid);
             }
-
-            //TO DO:: volume link
-
-            //TO DO:: header payload
             
         }
-
         detray_grids_print(grids_pd);
-
         return grids_pd;
     }
 
@@ -751,7 +726,7 @@ namespace detray{
 
     /// @brief visit all ACTS detector information, depth-first hierarchically, populate the corresponding payloads and convert to detray detector 
     /// @return detray detector from @param detector and @param gctx of ACTS 
-    detector_t detray_tree_converter(
+    std::tuple<detector_t, vecmem::memory_resource&> detray_tree_converter(
         const Acts::Experimental::Detector& detector,
         const Acts::GeometryContext& gctx, vecmem::memory_resource& mr){
         
@@ -771,16 +746,16 @@ namespace detray{
                                     typename detector_t::surface_type,
                                     std::integral_constant<std::size_t, 0>,
                                     std::integral_constant<std::size_t, 2>>
-                                    ::convert<detector_t>(det_builder, names, detray_converter_grid(detector));
+                                    ::convert<detector_t>(det_builder, names, convertSurfaceGrids(detector));
         
-
         std::cout<<"detector_t"<<std::endl;
         detray::types::print<types::list<detector_t>>();
 
         detector_t detrayDet(det_builder.build(mr));
         detray::detail::check_consistency(detrayDet);
-
-        return std::move(detrayDet);
+        
+        std::tuple<detector_t, vecmem::memory_resource&> det_tuple(std::move(detrayDet), mr);
+        return std::move(det_tuple);
     }
 
 }
